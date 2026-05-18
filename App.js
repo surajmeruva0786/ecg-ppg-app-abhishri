@@ -12,25 +12,55 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [prediction, setPrediction] = useState(null);
 
-  const processImage = (uri) => {
+  const processImage = async (uri) => {
     setImage(uri);
     setIsProcessing(true);
     setPrediction(null);
     
-    // Simulate backend processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      // Randomly simulate a result for the frontend demo
-      const isRisk = Math.random() > 0.5;
-      setPrediction({
-        status: isRisk ? 'High Risk' : 'Normal',
-        confidence: (Math.random() * 20 + 75).toFixed(1), // 75-95%
-        description: isRisk 
-          ? 'Pattern indicates potential Myocardial Infarction. Immediate medical consultation recommended.'
-          : 'ECG/PPG pattern appears normal. No immediate signs of Myocardial Infarction detected.',
-        color: isRisk ? '#FF4B4B' : '#00E676'
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: uri,
+        name: 'upload.jpg',
+        type: 'image/jpeg',
       });
-    }, 3000);
+      
+      // Use 10.0.2.2 for Android Emulator, localhost for iOS simulator/Web. 
+      // Use Localtunnel to bypass Windows Firewall and network restrictions
+      const BACKEND_URL = 'https://two-symbols-listen.loca.lt/predict'; 
+      
+      const response = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true', // Bypasses the localtunnel warning page
+          // Note: React Native automatically sets Content-Type for FormData
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      setPrediction({
+        status: result.status,
+        confidence: result.confidence.toString(),
+        description: result.description,
+        color: result.color
+      });
+    } catch (error) {
+      console.error('Error in processImage:', error);
+      setPrediction({
+        status: 'Error',
+        confidence: 'N/A',
+        description: `Failed to connect to ${BACKEND_URL}. Error: ${error.message}. Make sure your phone and PC are on the SAME Wi-Fi, and Windows Firewall is allowing Python through port 8000.`,
+        color: '#FF4B4B'
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const takePhoto = async () => {

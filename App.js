@@ -26,15 +26,14 @@ export default function App() {
       });
       
       // Use 10.0.2.2 for Android Emulator, localhost for iOS simulator/Web. 
-      // Use Localtunnel to bypass Windows Firewall and network restrictions
-      const BACKEND_URL = 'https://two-symbols-listen.loca.lt/predict'; 
+      // Use localhost.run SSH tunnel to bypass Windows Firewall and network restrictions
+      const BACKEND_URL = 'https://ce5653e49845c6.lhr.life/predict'; 
       
       const response = await fetch(BACKEND_URL, {
         method: 'POST',
         body: formData,
         headers: {
           'Accept': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true', // Bypasses the localtunnel warning page
           // Note: React Native automatically sets Content-Type for FormData
         },
       });

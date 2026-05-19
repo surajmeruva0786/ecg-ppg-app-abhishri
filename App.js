@@ -7,6 +7,11 @@ import { Camera, UploadCloud, HeartPulse, ChevronLeft, AlertCircle, CheckCircle 
 
 const { width } = Dimensions.get('window');
 
+// Update this URL each time you restart the localhost.run tunnel.
+// Run: ssh -R 80:localhost:8000 nokey@localhost.run
+// Then copy the new HTTPS URL shown in the terminal.
+const BACKEND_URL = 'https://50be269fd0fa1e.lhr.life/predict';
+
 export default function App() {
   const [image, setImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -16,7 +21,10 @@ export default function App() {
     setImage(uri);
     setIsProcessing(true);
     setPrediction(null);
-    
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
     try {
       const formData = new FormData();
       formData.append('file', {
@@ -24,24 +32,20 @@ export default function App() {
         name: 'upload.jpg',
         type: 'image/jpeg',
       });
-      
-      // Use 10.0.2.2 for Android Emulator, localhost for iOS simulator/Web. 
-      // Use localhost.run SSH tunnel to bypass Windows Firewall and network restrictions
-      const BACKEND_URL = 'https://ce5653e49845c6.lhr.life/predict'; 
-      
+
       const response = await fetch(BACKEND_URL, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Accept': 'application/json',
-          // Note: React Native automatically sets Content-Type for FormData
-        },
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
       });
-      
+
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
       }
-      
+
       const result = await response.json();
       setPrediction({
         status: result.status,
@@ -50,11 +54,18 @@ export default function App() {
         color: result.color
       });
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Error in processImage:', error);
+      let msg = error.message;
+      if (error.name === 'AbortError') {
+        msg = 'Request timed out (60s). The server may be overloaded or unreachable.';
+      } else if (msg === 'Network request failed') {
+        msg = `Cannot reach server. Steps to fix:\n1. Make sure Python server is running: python server.py\n2. Restart the tunnel: ssh -R 80:localhost:8000 nokey@localhost.run\n3. Update BACKEND_URL in App.js with the new tunnel URL\n4. Test the URL in your phone browser first`;
+      }
       setPrediction({
         status: 'Error',
         confidence: 'N/A',
-        description: `Failed to connect to ${BACKEND_URL}. Error: ${error.message}. Make sure your phone and PC are on the SAME Wi-Fi, and Windows Firewall is allowing Python through port 8000.`,
+        description: msg,
         color: '#FF4B4B'
       });
     } finally {

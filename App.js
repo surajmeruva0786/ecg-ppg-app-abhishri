@@ -1,81 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet, Text, View, TouchableOpacity, Image, ActivityIndicator,
-  SafeAreaView, Dimensions, Modal, TextInput, KeyboardAvoidingView,
-  Platform, ScrollView, Alert,
+  SafeAreaView, Dimensions, ScrollView, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Camera, UploadCloud, HeartPulse, ChevronLeft, AlertCircle, CheckCircle, Settings } from 'lucide-react-native';
+import { Camera, UploadCloud, HeartPulse, ChevronLeft, AlertCircle, CheckCircle } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
-const STORAGE_KEY = '@cardiovision_backend_url';
+const BACKEND_URL = 'https://ecg-ppg-app-abhishri.onrender.com/predict';
 
 export default function App() {
   const [image, setImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prediction, setPrediction] = useState(null);
-  const [backendUrl, setBackendUrl] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [urlInput, setUrlInput] = useState('');
-  const [isLoadingUrl, setIsLoadingUrl] = useState(true);
-
-  useEffect(() => {
-    loadSavedUrl();
-  }, []);
-
-  const loadSavedUrl = async () => {
-    try {
-      const saved = await AsyncStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setBackendUrl(saved);
-        setUrlInput(saved);
-      } else {
-        // No URL saved — open settings immediately on first launch
-        setShowSettings(true);
-      }
-    } catch (e) {
-      setShowSettings(true);
-    } finally {
-      setIsLoadingUrl(false);
-    }
-  };
-
-  const saveUrl = async () => {
-    const trimmed = urlInput.trim();
-    if (!trimmed) {
-      Alert.alert('Invalid URL', 'Please enter the backend server URL.');
-      return;
-    }
-    // Normalize: ensure it ends with /predict
-    let url = trimmed;
-    if (!url.endsWith('/predict')) {
-      url = url.replace(/\/$/, '') + '/predict';
-    }
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, url);
-      setBackendUrl(url);
-      setUrlInput(url);
-      setShowSettings(false);
-    } catch (e) {
-      Alert.alert('Error', 'Could not save URL. Please try again.');
-    }
-  };
 
   const processImage = async (uri) => {
-    if (!backendUrl) {
-      setShowSettings(true);
-      return;
-    }
-
     setImage(uri);
     setIsProcessing(true);
     setPrediction(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
     try {
       const formData = new FormData();
@@ -85,7 +32,7 @@ export default function App() {
         type: 'image/jpeg',
       });
 
-      const response = await fetch(backendUrl, {
+      const response = await fetch(BACKEND_URL, {
         method: 'POST',
         body: formData,
         headers: { 'Accept': 'application/json' },
@@ -114,27 +61,16 @@ export default function App() {
       console.error('Error in processImage:', error);
 
       let msg = '';
-      let showSettingsHint = false;
 
       if (error.name === 'AbortError') {
-        msg = 'Request timed out (90s). Server may be overloaded or unreachable.';
-        showSettingsHint = true;
+        msg = 'Request timed out (90s). The server may be waking up — please try again in 30 seconds.';
       } else if (error.message.startsWith('SERVER_ERROR:')) {
         const parts = error.message.split(':');
         const code = parts[1];
         const detail = parts.slice(2).join(':');
-        if (code === '503' || code === '502') {
-          msg = `Server unavailable (${code}). The tunnel may have expired. Open Settings and update the URL.`;
-          showSettingsHint = true;
-        } else {
-          msg = `Server error ${code}${detail ? ': ' + detail : ''}`;
-        }
-      } else if (
-        error.message === 'Network request failed' ||
-        error.message.includes('Network')
-      ) {
-        msg = 'Cannot reach server. Check that:\n• Python server is running\n• Tunnel is active\n• URL in Settings is correct';
-        showSettingsHint = true;
+        msg = `Server error ${code}${detail ? ': ' + detail : ''}`;
+      } else if (error.message === 'Network request failed' || error.message.includes('Network')) {
+        msg = 'Cannot reach server. Check your internet connection and try again.';
       } else {
         msg = error.message;
       }
@@ -145,7 +81,6 @@ export default function App() {
         description: msg,
         color: '#FF4B4B',
         isError: true,
-        showSettingsHint,
       });
     } finally {
       setIsProcessing(false);
@@ -188,16 +123,6 @@ export default function App() {
     setIsProcessing(false);
   };
 
-  if (isLoadingUrl) {
-    return (
-      <LinearGradient colors={['#0F172A', '#1E1B4B', '#0F172A']} style={styles.container}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#6366F1" />
-        </View>
-      </LinearGradient>
-    );
-  }
-
   return (
     <LinearGradient colors={['#0F172A', '#1E1B4B', '#0F172A']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -212,12 +137,6 @@ export default function App() {
             <HeartPulse color="#FF4B4B" size={28} />
             <Text style={styles.headerTitle}>CardioVision</Text>
           </View>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => { setUrlInput(backendUrl); setShowSettings(true); }}
-          >
-            <Settings color="#94A3B8" size={22} />
-          </TouchableOpacity>
         </View>
 
         {!image ? (
@@ -229,16 +148,6 @@ export default function App() {
             <Text style={styles.subtitle}>
               Upload or capture a signal image to instantly detect potential Myocardial Infarction.
             </Text>
-
-            {!backendUrl && (
-              <TouchableOpacity
-                style={styles.warningBanner}
-                onPress={() => setShowSettings(true)}
-              >
-                <AlertCircle color="#FBBF24" size={18} />
-                <Text style={styles.warningText}>Server URL not set — tap to configure</Text>
-              </TouchableOpacity>
-            )}
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity style={[styles.button, styles.primaryButton]} onPress={takePhoto}>
@@ -252,7 +161,7 @@ export default function App() {
             </View>
           </View>
         ) : (
-          <View style={styles.resultContainer}>
+          <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
             <View style={styles.imageCard}>
               <Image source={{ uri: image }} style={styles.previewImage} resizeMode="cover" />
               {isProcessing && (
@@ -286,76 +195,14 @@ export default function App() {
 
                 <Text style={styles.predictionDescription}>{prediction.description}</Text>
 
-                {prediction.showSettingsHint && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.warningButton]}
-                    onPress={() => { setUrlInput(backendUrl); setShowSettings(true); }}
-                  >
-                    <Settings color="#FBBF24" size={18} style={styles.buttonIcon} />
-                    <Text style={styles.warningButtonText}>Update Server URL</Text>
-                  </TouchableOpacity>
-                )}
-
                 <TouchableOpacity style={[styles.button, styles.outlineButton]} onPress={resetState}>
                   <Text style={styles.outlineButtonText}>Analyze Another Signal</Text>
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </ScrollView>
         )}
       </SafeAreaView>
-
-      {/* Settings Modal */}
-      <Modal visible={showSettings} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Settings color="#6366F1" size={24} />
-              <Text style={styles.modalTitle}>Server Configuration</Text>
-            </View>
-
-            <Text style={styles.modalLabel}>Backend URL</Text>
-            <Text style={styles.modalHint}>
-              Enter the full server address including port.{'\n'}
-              Example: {'\n'}
-              • Tunnel: https://abc123.lhr.life{'\n'}
-              • Local network: http://192.168.1.5:8000{'\n'}
-              The /predict path is added automatically.
-            </Text>
-
-            <TextInput
-              style={styles.urlInput}
-              value={urlInput}
-              onChangeText={setUrlInput}
-              placeholder="https://your-tunnel.lhr.life"
-              placeholderTextColor="#475569"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-
-            <View style={styles.modalButtons}>
-              {backendUrl ? (
-                <TouchableOpacity
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={() => setShowSettings(false)}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton, backendUrl ? { flex: 1 } : {}]}
-                onPress={saveUrl}
-              >
-                <Text style={styles.buttonText}>Save & Connect</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       <StatusBar style="light" />
     </LinearGradient>
@@ -376,14 +223,6 @@ const styles = StyleSheet.create({
   backButton: {
     position: 'absolute',
     left: 20,
-    zIndex: 10,
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-  },
-  settingsButton: {
-    position: 'absolute',
-    right: 20,
     zIndex: 10,
     padding: 8,
     backgroundColor: 'rgba(255,255,255,0.1)',
@@ -429,24 +268,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginBottom: 24,
-  },
-  warningText: {
-    color: '#FBBF24',
-    fontSize: 14,
-    fontWeight: '500',
+    marginBottom: 40,
   },
   buttonContainer: { width: '100%', gap: 16 },
   button: {
@@ -469,18 +291,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  warningButton: {
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.4)',
-    marginBottom: 12,
-    paddingVertical: 14,
-  },
-  warningButtonText: {
-    color: '#FBBF24',
-    fontSize: 16,
-    fontWeight: '600',
   },
   buttonIcon: { marginRight: 12 },
   buttonText: { color: '#FFF', fontSize: 18, fontWeight: '600' },
@@ -515,6 +325,7 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 32,
   },
   predictionHeader: {
     flexDirection: 'row',
@@ -544,56 +355,4 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   outlineButtonText: { color: '#818CF8', fontSize: 16, fontWeight: '600' },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  modalCard: {
-    backgroundColor: '#1E293B',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 28,
-    paddingBottom: 40,
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  modalTitle: { color: '#FFF', fontSize: 20, fontWeight: '700' },
-  modalLabel: { color: '#94A3B8', fontSize: 14, fontWeight: '600', marginBottom: 8 },
-  modalHint: {
-    color: '#475569',
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    padding: 12,
-    borderRadius: 12,
-  },
-  urlInput: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: 'rgba(99,102,241,0.4)',
-    borderRadius: 14,
-    padding: 16,
-    color: '#FFF',
-    fontSize: 15,
-    marginBottom: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  modalButtons: { flexDirection: 'row', gap: 12 },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 16,
-  },
-  cancelButtonText: { color: '#94A3B8', fontSize: 16, fontWeight: '600' },
 });
